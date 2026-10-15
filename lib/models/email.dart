@@ -1,3 +1,26 @@
+String _recipientText(dynamic value) {
+  if (value == null) return '';
+  if (value is String) return value;
+  if (value is List) {
+    return value.map((item) {
+      if (item is Map) {
+        final name = (item['name'] ?? item['toName'] ?? item['receiverName'] ?? '').toString();
+        final address = (item['email'] ?? item['address'] ?? item['toEmail'] ?? item['receiveEmail'] ?? '').toString();
+        if (name.isNotEmpty && address.isNotEmpty) return '$name <$address>';
+        return address.isNotEmpty ? address : name;
+      }
+      return item.toString();
+    }).where((s) => s.isNotEmpty).join(', ');
+  }
+  if (value is Map) {
+    final name = (value['name'] ?? value['toName'] ?? value['receiverName'] ?? '').toString();
+    final address = (value['email'] ?? value['address'] ?? value['toEmail'] ?? value['receiveEmail'] ?? '').toString();
+    if (name.isNotEmpty && address.isNotEmpty) return '$name <$address>';
+    return address.isNotEmpty ? address : name;
+  }
+  return value.toString();
+}
+
 class Email {
   final int emailId;
   final String sendEmail;
@@ -39,7 +62,7 @@ class Email {
       sendEmail: (json['sendEmail'] ?? json['fromEmail'] ?? '').toString(),
       sendName: (json['sendName'] ?? json['fromName'] ?? json['name'] ?? '').toString(),
       subject: json['subject'] ?? '(无主题)',
-      toEmail: (json['toEmail'] ?? json['receiverEmail'] ?? json['receiveEmail'] ?? json['recipientEmail'] ?? json['mailTo'] ?? json['to'] ?? '').toString(),
+      toEmail: _recipientText(json['toEmail'] ?? json['receiverEmail'] ?? json['receiveEmail'] ?? json['recipientEmail'] ?? json['mailTo'] ?? json['to'] ?? json['toList'] ?? json['receivers']),
       toName: (json['toName'] ?? json['receiverName'] ?? json['receiveName'] ?? json['recipientName'] ?? '').toString(),
       createTime: json['createTime'] ?? '',
       type: json['type'] ?? 0,
