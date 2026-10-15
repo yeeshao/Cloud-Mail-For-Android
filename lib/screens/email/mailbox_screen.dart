@@ -43,6 +43,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
   final Set<int> _selectedEmailIds = {};
   bool _batchLoading = false;
   List<Account> _accounts = [];
+  bool _allAccounts = false;
 
   @override
   void initState() {
@@ -118,28 +119,13 @@ class _MailboxScreenState extends State<MailboxScreen> {
 
   String get _cacheKey => _currentFolder.name;
 
-  int? get _queryAccountId => StorageService.currentAccountId;
+  int? get _queryAccountId => _allAccounts ? null : StorageService.currentAccountId;
 
   String _formatTime(String timeStr) {
     try {
       final dt = DateTime.parse(timeStr).toLocal();
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final emailDay = DateTime(dt.year, dt.month, dt.day);
-      final diffDays = today.difference(emailDay).inDays;
-
-      if (diffDays == 0) {
-        return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-      } else if (diffDays == 1) {
-        return '昨天';
-      } else if (diffDays < 7) {
-        return '$diffDays天前';
-      } else if (now.year == dt.year) {
-        return '${dt.month}月${dt.day}日';
-      } else {
-        return '${dt.year}/${dt.month}/${dt.day}';
-      }
-    } catch (e) {
+      return '${dt.year}年${dt.month}月${dt.day}日${dt.hour.toString().padLeft(2, '0')}：${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
       return timeStr;
     }
   }
@@ -798,7 +784,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
     for (final item in _accounts) {
       if (item.accountId == StorageService.currentAccountId) { account = item; break; }
     }
-    final email = account?.email ?? StorageService.email ?? '';
+    final email = _allAccounts ? '全部邮箱' : (account?.email ?? StorageService.email ?? '');
     final accountColor = AppTheme.accountColor(email);
     return Tooltip(
       message: '切换邮箱账户',
@@ -811,7 +797,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
           decoration: BoxDecoration(color: accountColor, shape: BoxShape.circle),
           child: Center(
             child: Text(
-              email.isNotEmpty ? email[0].toUpperCase() : '?',
+              _allAccounts ? '全' : (email.isNotEmpty ? email[0].toUpperCase() : '?'),
               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
             ),
           ),
@@ -821,13 +807,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
   }
 
   Future<void> _showAccountPicker() async {
-    try {
-      final response = await widget.api.getAccountList();
-      if (response.isSuccess && response.data != null && mounted) {
-        setState(() => _accounts = response.data!);
-      }
-    } catch (_) {}
-    if (!mounted) return;
+    // 账户列表已在初始化时加载；不要在点击头像后再等待网络请求。
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -845,11 +825,33 @@ class _MailboxScreenState extends State<MailboxScreen> {
                   padding: EdgeInsets.fromLTRB(4, 4, 4, 12),
                   child: Text('切换邮箱账户', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w600)),
                 ),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  leading: CircleAvatar(
+                    backgroundColor: Theme.of(sheetContext).colorScheme.primary,
+                    child: const Icon(Icons.all_inbox, color: Colors.white),
+                  ),
+                  title: const Text('全部邮箱'),
+                  subtitle: const Text('合并查看所有账户的邮件'),
+                  trailing: _allAccounts ? Icon(Icons.check_circle, color: cs.primary) : null,
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    if (!_allAccounts) {
+                      setState(() {
+                        _allAccounts = true;
+                        _emails = [];
+                        _lastEmailId = null;
+                        _hasMore = true;
+                      });
+                      _loadEmails();
+                    }
+                  },
+                ),
                 if (_accounts.isEmpty)
-                  const Padding(padding: EdgeInsets.all(16), child: Text('暂无可切换的邮箱账户'))
+                  const Padding(padding: EdgeInsets.all(16), child: Text('暂无其他邮箱账户'))
                 else
                   ..._accounts.map((account) {
-                    final selected = account.accountId == StorageService.currentAccountId;
+                    final selected = !_allAccounts && account.accountId == StorageService.currentAccountId;
                     final color = AppTheme.accountColor(account.email);
                     return ListTile(
                       contentPadding: const EdgeInsets.symmetric(horizontal: 4),
@@ -862,8 +864,9 @@ class _MailboxScreenState extends State<MailboxScreen> {
                       trailing: selected ? Icon(Icons.check_circle, color: cs.primary) : null,
                       onTap: () {
                         Navigator.pop(sheetContext);
-                        if (StorageService.currentAccountId != account.accountId) {
+                        if (_allAccounts || StorageService.currentAccountId != account.accountId) {
                           setState(() {
+                            _allAccounts = false;
                             StorageService.currentAccountId = account.accountId;
                             _emails = [];
                             _lastEmailId = null;
@@ -1460,7 +1463,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
                     ),
                     child: Center(
                       child: Text(
-                        email.isNotEmpty ? email[0].toUpperCase() : '?',
+                        _allAccounts ? '全' : (email.isNotEmpty ? email[0].toUpperCase() : '?'),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
