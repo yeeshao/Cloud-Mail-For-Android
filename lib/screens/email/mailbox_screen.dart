@@ -144,9 +144,9 @@ class _MailboxScreenState extends State<MailboxScreen> {
       return e.subject.toLowerCase().contains(q) ||
           e.sendName.toLowerCase().contains(q) ||
           e.sendEmail.toLowerCase().contains(q) ||
+          e.text.toLowerCase().contains(q) ||
           e.toEmail.toLowerCase().contains(q) ||
-          e.toName.toLowerCase().contains(q) ||
-          e.text.toLowerCase().contains(q);
+          e.toName.toLowerCase().contains(q);
     }).toList();
   }
 
@@ -189,20 +189,13 @@ class _MailboxScreenState extends State<MailboxScreen> {
         }
       } else {
         final isDel = _currentFolder == MailFolder.trash ? 1 : null;
-        final response = _allAccounts
-            ? await widget.api.getAllEmailList(
-                type: _emailType,
-                size: 20,
-                timeSort: 0,
-                isDel: isDel,
-              )
-            : await widget.api.getEmailList(
-                accountId: _queryAccountId,
-                type: _emailType,
-                size: 20,
-                timeSort: 0,
-                isDel: isDel,
-              );
+        final response = await widget.api.getEmailList(
+          accountId: _queryAccountId,
+          type: _emailType, // 全部邮箱也必须按导航栏当前分类分别查询：收件箱 type=0，发件箱 type=1
+          size: 20,
+          timeSort: 0,
+          isDel: isDel,
+        );
         if (response.isSuccess && response.data != null) {
           final fresh = response.data!.list;
           setState(() {
@@ -256,22 +249,14 @@ class _MailboxScreenState extends State<MailboxScreen> {
         }
       } else {
         final isDel = _currentFolder == MailFolder.trash ? 1 : null;
-        final response = _allAccounts
-            ? await widget.api.getAllEmailList(
-                type: _emailType,
-                size: 20,
-                emailId: _lastEmailId,
-                timeSort: 0,
-                isDel: isDel,
-              )
-            : await widget.api.getEmailList(
-                accountId: _queryAccountId,
-                type: _emailType,
-                size: 20,
-                emailId: _lastEmailId,
-                timeSort: 0,
-                isDel: isDel,
-              );
+        final response = await widget.api.getEmailList(
+          accountId: _queryAccountId,
+          type: _emailType,
+          size: 20,
+          emailId: _lastEmailId,
+          timeSort: 0,
+          isDel: isDel,
+        );
         if (response.isSuccess && response.data != null) {
           setState(() {
             _emails.addAll(response.data!.list);
