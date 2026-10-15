@@ -122,6 +122,37 @@ class CloudMailApi {
     });
   }
 
+  /// 查询所有邮箱聚合邮件。与单账户列表使用相同的响应结构。
+  /// 后端 allEmail/list 支持 type、游标和分页参数。
+  Future<ApiResponse<EmailListResult>> getAllEmailList({
+    int type = 0,
+    int size = 20,
+    int? emailId,
+    int timeSort = 0,
+    int? isDel,
+  }) async {
+    final params = <String, String>{
+      'type': type.toString(),
+      'size': size.toString(),
+      'timeSort': timeSort.toString(),
+      if (emailId != null) 'emailId': emailId.toString(),
+      if (isDel != null) 'isDel': isDel.toString(),
+    };
+    final uri = Uri.parse(_url('/allEmail/list')).replace(queryParameters: params);
+    final response = await http.get(uri, headers: _headers);
+    return _parseResponse<EmailListResult>(response, (data) {
+      final raw = data is Map<String, dynamic> ? (data['list'] as List? ?? []) : (data is List ? data : <dynamic>[]);
+      final list = raw.whereType<Map>().map((e) => Email.fromJson(Map<String, dynamic>.from(e))).toList();
+      return EmailListResult(
+        list: list,
+        total: data is Map<String, dynamic> ? (data['total'] as int? ?? list.length) : list.length,
+        latestEmail: data is Map<String, dynamic> && data['latestEmail'] is Map
+            ? Email.fromJson(Map<String, dynamic>.from(data['latestEmail'] as Map))
+            : (list.isNotEmpty ? list.first : null),
+      );
+    });
+  }
+
   Future<ApiResponse<List<Email>>> getLatestEmail({
     int? accountId,
     int type = 0,
