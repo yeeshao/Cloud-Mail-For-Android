@@ -83,6 +83,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
   }
 
   void _scrollListener() {
+    if (!_scrollController.hasClients) return;
     if (_scrollController.position.pixels >=
             _scrollController.position.maxScrollExtent - 200 &&
         !_loadingMore &&
@@ -1053,7 +1054,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
             ),
           );
         }
-        return _buildGoogleEmailItem(emails[i]);
+        return RepaintBoundary(child: _buildGoogleEmailItem(emails[i]));
       },
     );
   }
