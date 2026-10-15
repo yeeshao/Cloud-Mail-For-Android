@@ -1,26 +1,3 @@
-String _recipientText(dynamic value) {
-  if (value == null) return '';
-  if (value is String) return value;
-  if (value is List) {
-    return value.map((item) {
-      if (item is Map) {
-        final name = (item['name'] ?? item['toName'] ?? item['receiverName'] ?? '').toString();
-        final address = (item['email'] ?? item['address'] ?? item['toEmail'] ?? item['receiveEmail'] ?? '').toString();
-        if (name.isNotEmpty && address.isNotEmpty) return '$name <$address>';
-        return address.isNotEmpty ? address : name;
-      }
-      return item.toString();
-    }).where((s) => s.isNotEmpty).join(', ');
-  }
-  if (value is Map) {
-    final name = (value['name'] ?? value['toName'] ?? value['receiverName'] ?? '').toString();
-    final address = (value['email'] ?? value['address'] ?? value['toEmail'] ?? value['receiveEmail'] ?? '').toString();
-    if (name.isNotEmpty && address.isNotEmpty) return '$name <$address>';
-    return address.isNotEmpty ? address : name;
-  }
-  return value.toString();
-}
-
 class Email {
   final int emailId;
   final String sendEmail;
@@ -56,14 +33,37 @@ class Email {
     this.attList,
   });
 
+  static String _mailField(dynamic value) {
+    if (value == null) return '';
+    if (value is String || value is num) return value.toString();
+    if (value is List) {
+      return value.map(_mailField).where((s) => s.trim().isNotEmpty).join(', ');
+    }
+    if (value is Map) {
+      final m = Map<String, dynamic>.from(value);
+      final name = (m['name'] ?? m['personal'] ?? m['toName'] ?? m['receiverName'] ?? '').toString();
+      final address = (m['email'] ?? m['address'] ?? m['mail'] ?? m['emailAddress'] ?? m['toEmail'] ?? '').toString();
+      if (name.isNotEmpty && address.isNotEmpty) return '$name <$address>';
+      if (address.isNotEmpty) return address;
+      if (name.isNotEmpty) return name;
+      return m.values.map(_mailField).where((s) => s.trim().isNotEmpty).join(', ');
+    }
+    return value.toString();
+  }
+
   factory Email.fromJson(Map<String, dynamic> json) {
+    final rawTo = json['toEmail'] ?? json['receiverEmail'] ?? json['receiveEmail'] ??
+        json['recipientEmail'] ?? json['mailTo'] ?? json['to'] ?? json['recipients'] ??
+        json['receiver'] ?? json['receivers'] ?? json['toAddress'] ?? json['receiveAddress'];
+    final rawToName = json['toName'] ?? json['receiverName'] ?? json['receiveName'] ??
+        json['recipientName'] ?? json['receiverNick'] ?? '';
     return Email(
       emailId: json['emailId'] ?? 0,
       sendEmail: (json['sendEmail'] ?? json['fromEmail'] ?? '').toString(),
       sendName: (json['sendName'] ?? json['fromName'] ?? json['name'] ?? '').toString(),
       subject: json['subject'] ?? '(无主题)',
-      toEmail: _recipientText(json['toEmail'] ?? json['receiverEmail'] ?? json['receiveEmail'] ?? json['recipientEmail'] ?? json['mailTo'] ?? json['to'] ?? json['toList'] ?? json['receivers']),
-      toName: (json['toName'] ?? json['receiverName'] ?? json['receiveName'] ?? json['recipientName'] ?? '').toString(),
+      toEmail: _mailField(rawTo),
+      toName: _mailField(rawToName),
       createTime: json['createTime'] ?? '',
       type: json['type'] ?? 0,
       content: json['content'] ?? '',
