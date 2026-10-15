@@ -36,11 +36,11 @@ class Email {
   factory Email.fromJson(Map<String, dynamic> json) {
     return Email(
       emailId: json['emailId'] ?? 0,
-      sendEmail: json['sendEmail'] ?? '',
-      sendName: json['sendName'] ?? json['name'] ?? '',
+      sendEmail: (json['sendEmail'] ?? json['fromEmail'] ?? '').toString(),
+      sendName: (json['sendName'] ?? json['fromName'] ?? json['name'] ?? '').toString(),
       subject: json['subject'] ?? '(无主题)',
-      toEmail: json['toEmail'] ?? '',
-      toName: json['toName'] ?? '',
+      toEmail: (json['toEmail'] ?? json['receiverEmail'] ?? json['receiveEmail'] ?? json['recipientEmail'] ?? json['mailTo'] ?? json['to'] ?? '').toString(),
+      toName: (json['toName'] ?? json['receiverName'] ?? json['receiveName'] ?? json['recipientName'] ?? '').toString(),
       createTime: json['createTime'] ?? '',
       type: json['type'] ?? 0,
       content: json['content'] ?? '',
