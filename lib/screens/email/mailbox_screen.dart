@@ -42,6 +42,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
   bool _selectMode = false;
   final Set<int> _selectedEmailIds = {};
   bool _batchLoading = false;
+  List<Account> _accounts = [];
 
   @override
   void initState() {
@@ -55,6 +56,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
       final accResp = await widget.api.getAccountList();
       if (accResp.isSuccess && accResp.data != null) {
         final accounts = accResp.data!;
+        if (mounted) setState(() => _accounts = accounts);
         if (accounts.isEmpty) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -616,6 +618,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
             )
           : content,
       drawer: _selectMode ? null : _buildDrawer(isDark, isGoogle),
+      bottomNavigationBar: _selectMode ? null : _buildBottomNavigationBar(),
       floatingActionButton: _selectMode
           ? null
           : FloatingActionButton(
@@ -790,25 +793,134 @@ class _MailboxScreenState extends State<MailboxScreen> {
   }
 
   Widget _buildAccountAvatar() {
-    final email = StorageService.email ?? '';
+    Account? account;
+    for (final item in _accounts) {
+      if (item.accountId == StorageService.currentAccountId) { account = item; break; }
+    }
+    final email = account?.email ?? StorageService.email ?? '';
     final accountColor = AppTheme.accountColor(email);
-    return Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        color: accountColor,
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: Text(
-          email.isNotEmpty ? email[0].toUpperCase() : '?',
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w500,
-            fontSize: 16,
+    return Tooltip(
+      message: '切换邮箱账户',
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: _showAccountPicker,
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(color: accountColor, shape: BoxShape.circle),
+          child: Center(
+            child: Text(
+              email.isNotEmpty ? email[0].toUpperCase() : '?',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _showAccountPicker() async {
+    try {
+      final response = await widget.api.getAccountList();
+      if (response.isSuccess && response.data != null && mounted) {
+        setState(() => _accounts = response.data!);
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final cs = Theme.of(sheetContext).colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(4, 4, 4, 12),
+                  child: Text('切换邮箱账户', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w600)),
+                ),
+                if (_accounts.isEmpty)
+                  const Padding(padding: EdgeInsets.all(16), child: Text('暂无可切换的邮箱账户'))
+                else
+                  ..._accounts.map((account) {
+                    final selected = account.accountId == StorageService.currentAccountId;
+                    final color = AppTheme.accountColor(account.email);
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      leading: CircleAvatar(
+                        backgroundColor: color,
+                        child: Text(account.email.isNotEmpty ? account.email[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white)),
+                      ),
+                      title: Text(account.displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(account.email, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      trailing: selected ? Icon(Icons.check_circle, color: cs.primary) : null,
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        if (StorageService.currentAccountId != account.accountId) {
+                          setState(() {
+                            StorageService.currentAccountId = account.accountId;
+                            _emails = [];
+                            _lastEmailId = null;
+                            _hasMore = true;
+                          });
+                          _loadEmails();
+                        }
+                      },
+                    );
+                  }),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.manage_accounts_outlined),
+                  title: const Text('管理邮箱账户'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _openAccounts();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBottomNavigationBar() {
+    final cs = Theme.of(context).colorScheme;
+    const folders = <MailFolder>[MailFolder.inbox, MailFolder.sent, MailFolder.starred, MailFolder.trash];
+    const labels = <String>['收件箱', '已发送', '星标', '垃圾箱'];
+    const icons = <IconData>[Icons.inbox_outlined, Icons.send_outlined, Icons.star_border_rounded, Icons.delete_outline_rounded];
+    final selectedIndex = folders.indexOf(_currentFolder);
+    return NavigationBar(
+      height: 68,
+      selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      backgroundColor: cs.surface,
+      indicatorColor: cs.primaryContainer,
+      onDestinationSelected: (index) {
+        final folder = folders[index];
+        if (folder == _currentFolder) return;
+        setState(() {
+          _currentFolder = folder;
+          _emails = [];
+          _lastEmailId = null;
+          _hasMore = true;
+          _searchQuery = '';
+          _searching = false;
+          _searchController.clear();
+        });
+        _loadEmails();
+      },
+      destinations: List.generate(folders.length, (index) => NavigationDestination(
+        icon: Icon(icons[index]),
+        selectedIcon: Icon(icons[index]),
+        label: labels[index],
+      )),
     );
   }
 
@@ -816,7 +928,6 @@ class _MailboxScreenState extends State<MailboxScreen> {
   Widget _buildAppleAppBar(bool isDark) {
     final cs = Theme.of(context).colorScheme;
     final email = StorageService.email ?? '';
-    final accountColor = AppTheme.accountColor(email);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 4, 12, 8),
@@ -839,16 +950,8 @@ class _MailboxScreenState extends State<MailboxScreen> {
                   ),
                 ),
               ),
-              if (email.isNotEmpty)
-                Container(
-                  width: 10,
-                  height: 10,
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: accountColor,
-                    shape: BoxShape.circle,
-                  ),
-                ),
+              _buildAccountAvatar(),
+              const SizedBox(width: 4),
               IconButton(
                 icon: const Icon(Icons.search, size: 22),
                 onPressed: () {
