@@ -28,7 +28,7 @@ class Glass {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(radius),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          filter: ImageFilter.blur(sigmaX: blur.clamp(0.0, 8.0).toDouble(), sigmaY: blur.clamp(0.0, 8.0).toDouble()),
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
@@ -53,7 +53,7 @@ class Glass {
   static Widget appBar({double blur = 25, double opacity = 0.7}) {
     final isDark = _isDarkFromContext();
     return BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+      filter: ImageFilter.blur(sigmaX: blur.clamp(0.0, 8.0).toDouble(), sigmaY: blur.clamp(0.0, 8.0).toDouble()),
       child: Container(
         decoration: BoxDecoration(
           color: isDark
@@ -103,7 +103,7 @@ class GlassBox extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(radius),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          filter: ImageFilter.blur(sigmaX: blur.clamp(0.0, 8.0).toDouble(), sigmaY: blur.clamp(0.0, 8.0).toDouble()),
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
@@ -117,7 +117,7 @@ class GlassBox extends StatelessWidget {
                     width: 0.5,
                   ),
             ),
-            child: child,
+            child: RepaintBoundary(child: child),
           ),
         ),
       ),
