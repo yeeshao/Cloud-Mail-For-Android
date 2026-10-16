@@ -53,18 +53,61 @@ class Email {
     return value.toString();
   }
 
-  // 统一状态：1 表示已读，0 表示未读。兼容后端常见布尔/字符串字段。
+  // 统一状态：1 表示已读，0 表示未读。
+  // 不要优先读取通用的 `status`：部分服务端用它表示邮件发送/同步状态，
+  // 会覆盖真正的 isRead/read/seen 字段，导致所有邮件看起来状态相同。
   static int _parseReadStatus(Map<String, dynamic> json) {
-    final raw = json['status'] ?? json['readStatus'] ?? json['isRead'] ??
-        json['read'] ?? json['seen'];
-    if (raw is bool) return raw ? 1 : 0;
-    if (raw is num) return raw.toInt() == 1 ? 1 : 0;
-    if (raw != null) {
-      final value = raw.toString().trim().toLowerCase();
-      if (['1', 'true', 'read', '已读', 'yes'].contains(value)) return 1;
-      if (['0', 'false', 'unread', '未读', 'no'].contains(value)) return 0;
+    dynamic findReadValue(Map source) {
+      const explicitKeys = [
+        'isRead', 'is_read', 'readStatus', 'read_status', 'read',
+        'seen', 'isSeen', 'is_seen', 'readFlag', 'read_flag',
+        'isReaded', 'readed', 'unread', 'isUnread', 'is_unread',
+      ];
+      for (final key in explicitKeys) {
+        if (source.containsKey(key) && source[key] != null) {
+          return {'__key': key, '__value': source[key]};
+        }
+      }
+      // 常见接口会将邮件字段包在 data/mail/emailInfo 中。
+      for (final key in ['mail', 'email', 'emailInfo', 'mailInfo', 'data']) {
+        final nested = source[key];
+        if (nested is Map) {
+          final value = findReadValue(nested);
+          if (value != null) return value;
+        }
+      }
+      // 只有不存在任何明确的已读字段时，才兼容通用 status。
+      if (source.containsKey('status') && source['status'] != null) {
+        return {'__key': 'status', '__value': source['status']};
+      }
+      return null;
     }
-    return 0;
+
+    final found = findReadValue(json);
+    if (found == null) return 0;
+    final key = found['__key'].toString();
+    final raw = found['__value'];
+
+    bool? parsed;
+    if (raw is bool) {
+      parsed = raw;
+    } else if (raw is num) {
+      parsed = raw != 0;
+    } else if (raw != null) {
+      final value = raw.toString().trim().toLowerCase();
+      if (['1', 'true', 'read', '已读', 'yes', 'seen'].contains(value)) {
+        parsed = true;
+      } else if (['0', 'false', 'unread', '未读', 'no', 'unseen'].contains(value)) {
+        parsed = false;
+      }
+    }
+
+    if (parsed == null) return 0;
+    // unread/isUnread 字段语义与 isRead 相反。
+    if (key == 'unread' || key == 'isUnread' || key == 'is_unread') {
+      parsed = !parsed;
+    }
+    return parsed ? 1 : 0;
   }
 
   factory Email.fromJson(Map<String, dynamic> json) {
