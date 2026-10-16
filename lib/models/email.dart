@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class Email {
   final int emailId;
   final String sendEmail;
@@ -52,29 +54,72 @@ class Email {
   }
 
   factory Email.fromJson(Map<String, dynamic> json) {
-    final rawTo = json['toEmail'] ?? json['receiverEmail'] ?? json['receiveEmail'] ??
-        json['recipientEmail'] ?? json['mailTo'] ?? json['to'] ?? json['recipients'] ??
-        json['receiver'] ?? json['receivers'] ?? json['toAddress'] ?? json['receiveAddress'];
-    final rawToName = json['toName'] ?? json['receiverName'] ?? json['receiveName'] ??
-        json['recipientName'] ?? json['receiverNick'] ?? '';
+    // 网页端/不同接口对收件人的字段命名并不完全一致。
+    // recipient 可能是 JSON 字符串、对象、数组，或嵌套在 data/mailInfo 中。
+    dynamic firstPresent(Map source, List<String> keys) {
+      for (final key in keys) {
+        final value = source[key];
+        if (value != null && value.toString().trim().isNotEmpty) return value;
+      }
+      return null;
+    }
+
+    dynamic rawTo = firstPresent(json, [
+      'toEmail', 'receiverEmail', 'receiveEmail', 'recipientEmail',
+      'mailTo', 'to', 'recipients', 'recipient', 'receiver', 'receivers',
+      'toAddress', 'receiveAddress', 'mailReceiver', 'receiveUser',
+    ]);
+    dynamic rawToName = firstPresent(json, [
+      'toName', 'receiverName', 'receiveName', 'recipientName',
+      'receiverNick', 'toNick', 'receiveNick',
+    ]);
+
+    if (rawTo is String) {
+      final value = rawTo.trim();
+      if ((value.startsWith('[') && value.endsWith(']')) ||
+          (value.startsWith('{') && value.endsWith('}'))) {
+        try {
+          rawTo = jsonDecode(value);
+        } catch (_) {}
+      }
+    }
+
+    // 有些响应把收件人信息包在 recipient/to 对象的 address/email 字段里。
+    if (rawTo == null) {
+      final nested = firstPresent(json, ['mail', 'emailInfo', 'mailInfo', 'data']);
+      if (nested is Map) {
+        rawTo = firstPresent(nested, [
+          'toEmail', 'receiverEmail', 'receiveEmail', 'recipientEmail',
+          'to', 'recipients', 'recipient', 'receiver', 'receivers',
+        ]);
+        rawToName = rawToName ?? firstPresent(nested, [
+          'toName', 'receiverName', 'receiveName', 'recipientName',
+        ]);
+      }
+    }
+
+    String stringField(dynamic value, [String fallback = '']) =>
+        value == null ? fallback : value.toString();
+
     return Email(
-      emailId: json['emailId'] ?? 0,
-      sendEmail: (json['sendEmail'] ?? json['fromEmail'] ?? '').toString(),
-      sendName: (json['sendName'] ?? json['fromName'] ?? json['name'] ?? '').toString(),
-      subject: json['subject'] ?? '(无主题)',
+      emailId: int.tryParse(stringField(json['emailId'] ?? json['id'])) ?? 0,
+      sendEmail: stringField(json['sendEmail'] ?? json['fromEmail'] ?? json['senderEmail']),
+      sendName: stringField(json['sendName'] ?? json['fromName'] ?? json['senderName'] ?? json['name']),
+      subject: stringField(json['subject'] ?? json['title'], '(无主题)'),
       toEmail: _mailField(rawTo),
       toName: _mailField(rawToName),
-      createTime: json['createTime'] ?? '',
-      type: json['type'] ?? 0,
-      content: json['content'] ?? '',
-      text: json['text'] ?? '',
-      isDel: json['isDel'] ?? 0,
-      isStar: json['isStar'] ?? (json['starId'] != null ? 1 : 0),
-      status: json['status'] ?? 0,
-      messageId: json['messageId'],
-      attList: json['attList'] != null
+      createTime: stringField(json['createTime'] ?? json['sendTime'] ?? json['sentDate'] ?? json['date']),
+      type: int.tryParse(stringField(json['type'] ?? json['mailType'])) ?? 0,
+      content: stringField(json['content'] ?? json['html'] ?? json['body']),
+      text: stringField(json['text'] ?? json['textContent'] ?? json['plainText']),
+      isDel: int.tryParse(stringField(json['isDel'] ?? json['deleted'])) ?? 0,
+      isStar: int.tryParse(stringField(json['isStar'] ?? (json['starId'] != null ? 1 : 0))) ?? 0,
+      status: int.tryParse(stringField(json['status'] ?? json['readStatus'])) ?? 0,
+      messageId: json['messageId']?.toString(),
+      attList: json['attList'] is List
           ? (json['attList'] as List)
-              .map((e) => Attachment.fromJson(e))
+              .whereType<Map>()
+              .map((e) => Attachment.fromJson(Map<String, dynamic>.from(e)))
               .toList()
           : null,
     );
