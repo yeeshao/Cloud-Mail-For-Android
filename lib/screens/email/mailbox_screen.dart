@@ -121,12 +121,41 @@ class _MailboxScreenState extends State<MailboxScreen> {
 
   int? get _queryAccountId => _allAccounts ? null : StorageService.currentAccountId;
 
-  String _formatTime(String timeStr) {
+  // 固定按中国标准时间（UTC+8）显示，不依赖手机当前时区。
+  DateTime? _chinaTime(String timeStr) {
     try {
-      final dt = DateTime.parse(timeStr).toLocal();
-      return '${dt.year}年${dt.month}月${dt.day}日${dt.hour.toString().padLeft(2, '0')}：${dt.minute.toString().padLeft(2, '0')}';
+      final value = timeStr.trim();
+      final hasZone = RegExp(r'(Z|[+-]\\d{2}:?\\d{2})$', caseSensitive: false)
+          .hasMatch(value);
+      final normalized = value.contains('T') ? value : value.replaceFirst(' ', 'T');
+      final parsed = DateTime.parse(normalized);
+      if (hasZone) return parsed.toUtc().add(const Duration(hours: 8));
+      // 服务端无时区的时间按 UTC 处理，再转换到东八区。
+      return DateTime.utc(parsed.year, parsed.month, parsed.day, parsed.hour,
+              parsed.minute, parsed.second, parsed.millisecond, parsed.microsecond)
+          .add(const Duration(hours: 8));
     } catch (_) {
-      return timeStr;
+      return null;
+    }
+  }
+
+  String _formatTime(String timeStr) {
+    final dt = _chinaTime(timeStr);
+    if (dt == null) return timeStr;
+    return '${dt.year}年${dt.month}月${dt.day}日${dt.hour.toString().padLeft(2, '0')}：${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  List<Email> _emailsForCurrentFolder(Iterable<Email> source) {
+    if (!_allAccounts) return source.toList();
+    switch (_currentFolder) {
+      case MailFolder.inbox:
+        return source.where((e) => e.type == 0 && !e.isDeleted).toList();
+      case MailFolder.sent:
+        return source.where((e) => e.type == 1 && !e.isDeleted).toList();
+      case MailFolder.starred:
+        return source.where((e) => e.isStarred).toList();
+      case MailFolder.trash:
+        return source.where((e) => e.isDeleted).toList();
     }
   }
 
@@ -157,7 +186,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
     final hasCache = cached != null && cached.isNotEmpty;
     if (hasCache) {
       setState(() {
-        _emails = cached.map((e) => Email.fromJson(e)).toList();
+        _emails = _emailsForCurrentFolder(cached.map((e) => Email.fromJson(e)));
         _loading = false;
         _silentRefreshing = true;
         _hasMore = _emails.length >= 20;
@@ -206,12 +235,13 @@ class _MailboxScreenState extends State<MailboxScreen> {
                 isDel: isDel,
               );
         if (response.isSuccess && response.data != null) {
-          final fresh = response.data!.list;
+          final rawList = response.data!.list;
+          final fresh = _emailsForCurrentFolder(rawList);
           setState(() {
             _emails = fresh;
-            _hasMore = fresh.length >= 20;
-            if (fresh.isNotEmpty) {
-              _lastEmailId = fresh.last.emailId;
+            _hasMore = rawList.length >= 20;
+            if (rawList.isNotEmpty) {
+              _lastEmailId = rawList.last.emailId;
             }
           });
           StorageService.setMailCache(
@@ -275,11 +305,13 @@ class _MailboxScreenState extends State<MailboxScreen> {
                 isDel: isDel,
               );
         if (response.isSuccess && response.data != null) {
+          final rawList = response.data!.list;
+          final matching = _emailsForCurrentFolder(rawList);
           setState(() {
-            _emails.addAll(response.data!.list);
-            _hasMore = response.data!.list.length >= 20;
-            if (response.data!.list.isNotEmpty) {
-              _lastEmailId = response.data!.list.last.emailId;
+            _emails.addAll(matching);
+            _hasMore = rawList.length >= 20;
+            if (rawList.isNotEmpty) {
+              _lastEmailId = rawList.last.emailId;
             }
           });
         }
@@ -1204,6 +1236,16 @@ class _MailboxScreenState extends State<MailboxScreen> {
                     children: [
                       Row(
                         children: [
+                          if (!email.isRead && _currentFolder == MailFolder.inbox)
+                            Container(
+                              width: 7,
+                              height: 7,
+                              margin: const EdgeInsets.only(right: 6, top: 6),
+                              decoration: BoxDecoration(
+                                color: cs.primary,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
                           Expanded(
                             child: Text(
                               senderName,
@@ -1211,7 +1253,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 15,
-                                fontWeight: FontWeight.w500,
+                                fontWeight: (!email.isRead && _currentFolder == MailFolder.inbox) ? FontWeight.w700 : FontWeight.w500,
                                 color: cs.onSurface,
                               ),
                             ),
@@ -1234,7 +1276,7 @@ class _MailboxScreenState extends State<MailboxScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: (!email.isRead && _currentFolder == MailFolder.inbox) ? FontWeight.w700 : FontWeight.w500,
                           color: cs.onSurface,
                         ),
                       ),
