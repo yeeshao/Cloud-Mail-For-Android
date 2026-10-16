@@ -58,9 +58,18 @@ class _EmailDetailScreenState extends State<EmailDetailScreen> {
 
   String _formatFullTime(String timeStr) {
     try {
-      final dt = DateTime.parse(timeStr).toLocal();
+      final value = timeStr.trim();
+      final hasZone = RegExp(r'(Z|[+-]\\d{2}:?\\d{2})$', caseSensitive: false)
+          .hasMatch(value);
+      final normalized = value.contains('T') ? value : value.replaceFirst(' ', 'T');
+      final parsed = DateTime.parse(normalized);
+      final dt = hasZone
+          ? parsed.toUtc().add(const Duration(hours: 8))
+          : DateTime.utc(parsed.year, parsed.month, parsed.day, parsed.hour,
+                  parsed.minute, parsed.second, parsed.millisecond, parsed.microsecond)
+              .add(const Duration(hours: 8));
       return DateFormat('yyyy-MM-dd HH:mm').format(dt);
-    } catch (e) {
+    } catch (_) {
       return timeStr;
     }
   }
