@@ -54,60 +54,68 @@ class Email {
   }
 
   // 统一状态：1 表示已读，0 表示未读。
-  // 不要优先读取通用的 `status`：部分服务端用它表示邮件发送/同步状态，
-  // 会覆盖真正的 isRead/read/seen 字段，导致所有邮件看起来状态相同。
+  // 重要：后端的通用 `status` 字段可能代表发送/业务状态，不能优先当作已读状态。
+  // 与可正常显示未读状态的参考客户端保持一致，优先使用 isRead/read 字段。
   static int _parseReadStatus(Map<String, dynamic> json) {
-    dynamic findReadValue(Map source) {
-      const explicitKeys = [
-        'isRead', 'is_read', 'readStatus', 'read_status', 'read',
-        'seen', 'isSeen', 'is_seen', 'readFlag', 'read_flag',
-        'isReaded', 'readed', 'unread', 'isUnread', 'is_unread',
-      ];
-      for (final key in explicitKeys) {
-        if (source.containsKey(key) && source[key] != null) {
-          return {'__key': key, '__value': source[key]};
-        }
-      }
-      // 常见接口会将邮件字段包在 data/mail/emailInfo 中。
-      for (final key in ['mail', 'email', 'emailInfo', 'mailInfo', 'data']) {
-        final nested = source[key];
-        if (nested is Map) {
-          final value = findReadValue(nested);
-          if (value != null) return value;
-        }
-      }
-      // 只有不存在任何明确的已读字段时，才兼容通用 status。
-      if (source.containsKey('status') && source['status'] != null) {
-        return {'__key': 'status', '__value': source['status']};
+    dynamic lookup(Map source, List<String> keys) {
+      for (final key in keys) {
+        if (source.containsKey(key) && source[key] != null) return source[key];
       }
       return null;
     }
 
-    final found = findReadValue(json);
-    if (found == null) return 0;
-    final key = found['__key'].toString();
-    final raw = found['__value'];
-
-    bool? parsed;
-    if (raw is bool) {
-      parsed = raw;
-    } else if (raw is num) {
-      parsed = raw != 0;
-    } else if (raw != null) {
+    int? parseReadValue(dynamic raw) {
+      if (raw == null) return null;
+      if (raw is bool) return raw ? 1 : 0;
+      if (raw is num) {
+        if (raw == 1) return 1;
+        if (raw == 0) return 0;
+        return null;
+      }
       final value = raw.toString().trim().toLowerCase();
-      if (['1', 'true', 'read', '已读', 'yes', 'seen'].contains(value)) {
-        parsed = true;
-      } else if (['0', 'false', 'unread', '未读', 'no', 'unseen'].contains(value)) {
-        parsed = false;
+      if (['1', 'true', 'read', '已读', 'yes', 'seen'].contains(value)) return 1;
+      if (['0', 'false', 'unread', '未读', 'no', 'unseen'].contains(value)) return 0;
+      return null;
+    }
+
+    // 明确的“已读”字段优先；不能让 status（通常是业务状态）覆盖它们。
+    final explicitRead = lookup(json, [
+      'isRead', 'is_read', 'read', 'seen', 'readStatus', 'read_status',
+      'mailRead', 'mail_read', 'hasRead', 'has_read',
+    ]);
+    final parsedRead = parseReadValue(explicitRead);
+    if (parsedRead != null) return parsedRead;
+
+    // 未读字段语义相反，需要反转。
+    final explicitUnread = lookup(json, [
+      'isUnread', 'is_unread', 'unread', 'unRead', 'notRead', 'not_read',
+    ]);
+    final parsedUnread = parseReadValue(explicitUnread);
+    if (parsedUnread != null) return parsedUnread == 1 ? 0 : 1;
+
+    // 有些接口把邮件对象嵌套在 data/mail/emailInfo 中。
+    for (final key in ['data', 'mail', 'emailInfo', 'mailInfo']) {
+      final nested = json[key];
+      if (nested is Map) {
+        final nestedRead = _parseReadStatus(Map<String, dynamic>.from(nested));
+        // 缺少明确字段时递归会返回默认已读；只在嵌套对象确实有读状态字段时采用。
+        final hasReadKey = [
+          'isRead', 'is_read', 'read', 'seen', 'readStatus', 'read_status',
+          'mailRead', 'mail_read', 'hasRead', 'has_read',
+          'isUnread', 'is_unread', 'unread', 'unRead', 'notRead', 'not_read',
+        ].any(nested.containsKey);
+        if (hasReadKey) return nestedRead;
       }
     }
 
-    if (parsed == null) return 0;
-    // unread/isUnread 字段语义与 isRead 相反。
-    if (key == 'unread' || key == 'isUnread' || key == 'is_unread') {
-      parsed = !parsed;
+    // 不把通用 status 数字当作已读状态；缺失已读字段时默认已读，避免所有邮件被误标未读。
+    // 若后端以后明确使用 status: "read"/"unread"，仅接受这种语义明确的字符串。
+    final status = json['status'];
+    if (status is String) {
+      final parsedStatus = parseReadValue(status);
+      if (parsedStatus != null) return parsedStatus;
     }
-    return parsed ? 1 : 0;
+    return 1;
   }
 
   factory Email.fromJson(Map<String, dynamic> json) {
