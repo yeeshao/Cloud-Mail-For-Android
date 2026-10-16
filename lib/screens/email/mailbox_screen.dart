@@ -145,17 +145,42 @@ class _MailboxScreenState extends State<MailboxScreen> {
     return '${dt.year}年${dt.month}月${dt.day}日${dt.hour.toString().padLeft(2, '0')}：${dt.minute.toString().padLeft(2, '0')}';
   }
 
+  Email _applyLocalReadOverride(Email email) {
+    // 只把本机已经打开过的邮件覆盖为已读；服务端仍返回未读时也不再反复显示蓝点。
+    if (email.isRead || !StorageService.isLocallyReadEmail(email.emailId)) {
+      return email;
+    }
+    return Email(
+      emailId: email.emailId,
+      sendEmail: email.sendEmail,
+      sendName: email.sendName,
+      subject: email.subject,
+      toEmail: email.toEmail,
+      toName: email.toName,
+      createTime: email.createTime,
+      type: email.type,
+      content: email.content,
+      text: email.text,
+      isDel: email.isDel,
+      isStar: email.isStar,
+      status: 1,
+      messageId: email.messageId,
+      attList: email.attList,
+    );
+  }
+
   List<Email> _emailsForCurrentFolder(Iterable<Email> source) {
-    if (!_allAccounts) return source.toList();
+    final normalized = source.map(_applyLocalReadOverride).toList();
+    if (!_allAccounts) return normalized;
     switch (_currentFolder) {
       case MailFolder.inbox:
-        return source.where((e) => e.type == 0 && !e.isDeleted).toList();
+        return normalized.where((e) => e.type == 0 && !e.isDeleted).toList();
       case MailFolder.sent:
-        return source.where((e) => e.type == 1 && !e.isDeleted).toList();
+        return normalized.where((e) => e.type == 1 && !e.isDeleted).toList();
       case MailFolder.starred:
-        return source.where((e) => e.isStarred).toList();
+        return normalized.where((e) => e.isStarred).toList();
       case MailFolder.trash:
-        return source.where((e) => e.isDeleted).toList();
+        return normalized.where((e) => e.isDeleted).toList();
     }
   }
 
@@ -330,6 +355,25 @@ class _MailboxScreenState extends State<MailboxScreen> {
       _toggleSelect(email.emailId);
       return;
     }
+
+    // 打开收件箱邮件即在本机标记为已读，先更新列表和缓存，避免返回后蓝点仍在。
+    if (_currentFolder == MailFolder.inbox && !email.isRead) {
+      StorageService.markEmailAsLocallyRead(email.emailId);
+      setState(() {
+        _emails = _emails
+            .map((item) => item.emailId == email.emailId
+                ? _applyLocalReadOverride(item)
+                : item)
+            .toList();
+      });
+      StorageService.setMailCache(
+        _cacheKey,
+        _queryAccountId,
+        _emails.map((item) => item.toJson()).toList(),
+      );
+      email = _applyLocalReadOverride(email);
+    }
+
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
