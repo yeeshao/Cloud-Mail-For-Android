@@ -53,6 +53,20 @@ class Email {
     return value.toString();
   }
 
+  // 统一状态：1 表示已读，0 表示未读。兼容后端常见布尔/字符串字段。
+  static int _parseReadStatus(Map<String, dynamic> json) {
+    final raw = json['status'] ?? json['readStatus'] ?? json['isRead'] ??
+        json['read'] ?? json['seen'];
+    if (raw is bool) return raw ? 1 : 0;
+    if (raw is num) return raw.toInt() == 1 ? 1 : 0;
+    if (raw != null) {
+      final value = raw.toString().trim().toLowerCase();
+      if (['1', 'true', 'read', '已读', 'yes'].contains(value)) return 1;
+      if (['0', 'false', 'unread', '未读', 'no'].contains(value)) return 0;
+    }
+    return 0;
+  }
+
   factory Email.fromJson(Map<String, dynamic> json) {
     // 网页端/不同接口对收件人的字段命名并不完全一致。
     // recipient 可能是 JSON 字符串、对象、数组，或嵌套在 data/mailInfo 中。
@@ -114,7 +128,7 @@ class Email {
       text: stringField(json['text'] ?? json['textContent'] ?? json['plainText']),
       isDel: int.tryParse(stringField(json['isDel'] ?? json['deleted'])) ?? 0,
       isStar: int.tryParse(stringField(json['isStar'] ?? (json['starId'] != null ? 1 : 0))) ?? 0,
-      status: int.tryParse(stringField(json['status'] ?? json['readStatus'])) ?? 0,
+      status: _parseReadStatus(json),
       messageId: json['messageId']?.toString(),
       attList: json['attList'] is List
           ? (json['attList'] as List)
