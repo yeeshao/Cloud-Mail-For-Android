@@ -9,6 +9,38 @@ class StorageService {
     _prefs ??= await SharedPreferences.getInstance();
   }
 
+  // ===== 本地已读覆盖 =====
+  // 某些服务端接口没有提供“标记已读”接口，或列表接口的已读状态同步滞后。
+  // 用户打开邮件后在本机持久记录已读状态，避免返回列表/刷新后蓝点又出现。
+  static const String _localReadEmailIdsKey = 'localReadEmailIds';
+
+  static Set<int> getLocalReadEmailIds() {
+    final raw = _prefs?.getString(_localReadEmailIdsKey);
+    if (raw == null || raw.isEmpty) return <int>{};
+    try {
+      return (jsonDecode(raw) as List)
+          .map((value) => int.tryParse(value.toString()))
+          .whereType<int>()
+          .toSet();
+    } catch (_) {
+      return <int>{};
+    }
+  }
+
+  static bool isLocallyReadEmail(int emailId) =>
+      getLocalReadEmailIds().contains(emailId);
+
+  static void markEmailAsLocallyRead(int emailId) {
+    if (emailId <= 0) return;
+    final ids = getLocalReadEmailIds()..add(emailId);
+    // 控制存储规模，保留最近标记的 5000 封邮件。
+    final values = ids.toList();
+    if (values.length > 5000) {
+      values.removeRange(0, values.length - 5000);
+    }
+    _prefs?.setString(_localReadEmailIdsKey, jsonEncode(values));
+  }
+
   // ===== 邮件列表缓存 =====
   // 按 "folder:accountId" 维度缓存首页邮件列表（JSON 字符串）
   // 设计：进入页面立刻用缓存渲染，后台再拉取最新数据替换
@@ -234,6 +266,7 @@ class StorageService {
     _prefs?.remove('token');
     _prefs?.remove('email');
     _prefs?.remove('currentAccountId');
+    _prefs?.remove(_localReadEmailIdsKey);
   }
 }
 
